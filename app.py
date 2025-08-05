@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
+
 from datetime import datetime, timedelta
 import json
 import os
@@ -241,7 +241,7 @@ def show_analytics():
             with col1:
                 # Confidence trend
                 if analytics["confidence_trend"]:
-                    df = pd.DataFrame(analytics["confidence_trend"])
+                    # Simplified chart - removed pandas dependency
                     fig = px.line(
                         df,
                         x="day",
