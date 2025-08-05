@@ -55,7 +55,7 @@ if "current_day" not in st.session_state:
     st.session_state.current_day = 1
 
 # API base URL
-API_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
+API_BASE_URL = os.getenv("BACKEND_URL", "https://ai-interview-assistant-rjve.onrender.com")
 
 
 def main():
