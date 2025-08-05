@@ -226,31 +226,15 @@ def show_analytics():
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric(
-                    "Total Hours Studied", f"{analytics['total_hours_studied']:.1f}h"
+                    "Total Hours Studied", f"{analytics['total_study_hours']:.1f}h"
                 )
             with col2:
                 st.metric("Problems Solved", analytics["problems_solved"])
             with col3:
-                st.metric("Topics Covered", len(analytics["topics_covered"]))
+                st.metric("Topics Completed", analytics["topics_completed"]
             with col4:
-                st.metric("Study Sessions", len(analytics["confidence_trend"]))
+                st.metric("Confidence Level", f"{analytics["confidence_level"]}%"
 
-            # Charts
-            col1, col2 = st.columns(2)
-
-            with col1:
-                # Confidence trend
-                if analytics["confidence_trend"]:
-                    # Simplified chart - removed pandas dependency
-                    fig = px.line(
-                        df,
-                        x="day",
-                        y="confidence",
-                        title="Confidence Level Trend",
-                        labels={"confidence": "Confidence Level", "day": "Day"},
-                    )
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
 
             with col2:
                 # Topics covered
@@ -301,140 +285,28 @@ def show_analytics():
 
 
 def show_calendar():
-    st.header("📅 45-Day Study Calendar")
-
-    try:
-        # Get full plan
-        plan_response = requests.get(f"{API_BASE_URL}/progress/plan")
-        if plan_response.status_code == 200:
-            plans = plan_response.json()
-
-            # Create calendar view
-            weeks = []
-            current_week = []
-
-            for plan in plans:
-                current_week.append(plan)
-                if len(current_week) == 7:
-                    weeks.append(current_week)
-                    current_week = []
-
-            if current_week:
-                weeks.append(current_week)
-
-            # Display calendar
-            for week_num, week in enumerate(weeks, 1):
-                st.subheader(f"Week {week_num}")
-
-                cols = st.columns(7)
-                for i, day_plan in enumerate(week):
-                    with cols[i]:
-                        day_num = day_plan["day"]
-                        topics = day_plan["topics"]
-
-                        # Day card
-                        st.markdown(
-                            f"""
-                        <div style="border: 1px solid #ddd; padding: 10px; border-radius: 5px; margin: 5px;">
-                            <h4>Day {day_num}</h4>
-                            <p><strong>{topics[0]}</strong></p>
-                            <p>{day_plan['estimated_hours']}h</p>
-                        </div>
-                        """,
-                            unsafe_allow_html=True,
-                        )
-
-        else:
-            st.error("Unable to load study plan")
-
-    except Exception as e:
-        st.error(f"Error loading calendar: {str(e)}")
-
-
-def show_settings():
-    st.header("⚙️ Settings")
-
-    st.subheader("Study Preferences")
-
-    # Daily study hours
-    daily_hours = st.slider("Daily Study Hours", 1, 8, 4)
-
-    # Focus areas
-    focus_areas = st.multiselect(
-        "Primary Focus Areas",
-        ["DSA", "Machine Learning", "System Design", "Behavioral"],
-        default=["DSA", "Machine Learning"],
-    )
-
-    # Notification preferences
-    st.subheader("Notifications")
-    enable_notifications = st.checkbox("Enable daily reminders", value=True)
-    reminder_time = st.time_input("Reminder time", value=datetime.now().time())
-
-    if st.button("Save Settings"):
-        st.success("Settings saved!")
-
-
-def send_chat_message(message: str, topic_category: str):
-    """Send message to AI and update chat history"""
-
-    try:
-        # Map topic category to API format
-        category_map = {
-            "DSA": "dsa",
-            "Machine Learning": "ml",
-            "System Design": "system_design",
-            "Behavioral": "behavioral",
-            "General": None,
-        }
-
-        payload = {
-            "message": message,
-            "topic_category": category_map.get(topic_category),
-        }
-
-        response = requests.post(f"{API_BASE_URL}/chat", json=payload)
-
-        if response.status_code == 200:
-            result = response.json()
-
-            # Add to chat history
-            st.session_state.chat_history.append({"role": "user", "content": message})
-
-            st.session_state.chat_history.append(
-                {"role": "assistant", "content": result["response"]}
-            )
-
-        else:
-            st.error("Failed to get AI response")
-
-    except Exception as e:
-        st.error(f"Error sending message: {str(e)}")
-
-
-def log_progress(day: int, plan: dict):
-    """Log daily progress"""
-
-    try:
-        payload = {
-            "day": day,
-            "topics": plan["topics"],
-            "notes": f"Completed day {day} study plan",
-            "hours_studied": plan["estimated_hours"],
-            "problems_solved": len(plan["practice_problems"]),
-            "confidence_level": 8,  # Default confidence
-        }
-
-        response = requests.post(f"{API_BASE_URL}/progress/daily", json=payload)
-
-        if response.status_code == 200:
-            st.session_state.current_day = day + 1
-        else:
-            st.error("Failed to log progress")
-
-    except Exception as e:
-        st.error(f"Error logging progress: {str(e)}")
-
-
-if __name__ == "__main__":
-    main()
+    st.header("📅 Study Calendar")
+    
+    st.write("**45-Day Study Plan Overview**")
+    
+    # Create a simple calendar view
+    st.subheader("📅 45-Day Study Plan")
+    
+    # Create a simple calendar grid
+    days = list(range(1, 46))
+    cols = st.columns(7)
+    
+    for i, day in enumerate(days):
+        col_idx = i % 7
+        with cols[col_idx]:
+            if day == st.session_state.current_day:
+                st.markdown(f"**{day}** 🎯")
+            elif day < st.session_state.current_day:
+                st.markdown(f"~~{day}~~ ✅")
+            else:
+                st.markdown(f"{day}")
+    
+    st.write("**Legend:**")
+    st.write("• 🎯 = Current Day")
+    st.write("• ✅ = Completed")
+    st.write("• Number = Future Day")
