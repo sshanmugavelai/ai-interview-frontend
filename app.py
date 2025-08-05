@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
-
 from datetime import datetime, timedelta
 import json
 import os
@@ -183,7 +182,7 @@ def show_ai_chat():
     with col1:
         topic_category = st.selectbox(
             "Select Topic Category",
-            ["General", "DSA", "Machine Learning", "System Design", "Behavioral"],
+            ["general", "dsa", "ml", "system_design", "behavioral"],
             help="Choose a specific topic for more targeted assistance",
         )
 
@@ -231,49 +230,34 @@ def show_analytics():
             with col2:
                 st.metric("Problems Solved", analytics["problems_solved"])
             with col3:
-                st.metric("Topics Completed", analytics["topics_completed"]
+                st.metric("Topics Completed", analytics["topics_completed"])
             with col4:
-                st.metric("Confidence Level", f"{analytics["confidence_level"]}%"
+                st.metric("Confidence Level", f"{analytics['confidence_level']}%")
 
-
-            with col2:
-                # Topics covered
-                if analytics["topics_covered"]:
-                    topic_counts = (
-                        pd.Series(analytics["topics_covered"]).value_counts().head(10)
-                    )
-                    fig = px.bar(
-                        x=topic_counts.values,
-                        y=topic_counts.index,
-                        title="Most Studied Topics",
-                        orientation="h",
-                    )
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-
-            # Weak and strong areas
+            # Progress chart
+            st.subheader("📊 Study Progress")
+            
+            # Create a simple progress chart
+            progress_data = {
+                "Category": ["DSA", "ML", "System Design", "Behavioral"],
+                "Progress": [75, 60, 45, 80]
+            }
+            
+            fig = px.bar(
+                x=progress_data["Category"],
+                y=progress_data["Progress"],
+                title="Progress by Category",
+                color=progress_data["Progress"],
+                color_continuous_scale="viridis"
+            )
+            st.plotly_chart(fig)
+            
+            # Additional metrics
             col1, col2 = st.columns(2)
-
             with col1:
-                st.subheader("🎯 Focus Areas (Weak)")
-                if analytics["weak_areas"]:
-                    for area in analytics["weak_areas"]:
-                        st.write(f"• {area}")
-                else:
-                    st.write("No weak areas identified!")
-
+                st.metric("Days Remaining", analytics["days_remaining"])
             with col2:
-                st.subheader("✅ Strong Areas")
-                if analytics["strong_areas"]:
-                    for area in analytics["strong_areas"]:
-                        st.write(f"• {area}")
-                else:
-                    st.write("Keep building strength in all areas!")
-
-            # Recommendations
-            st.subheader("💡 AI Recommendations")
-            for rec in analytics["next_recommendations"]:
-                st.write(f"• {rec}")
+                st.metric("Streak Days", analytics["streak_days"])
 
         else:
             st.warning(
@@ -310,3 +294,77 @@ def show_calendar():
     st.write("• 🎯 = Current Day")
     st.write("• ✅ = Completed")
     st.write("• Number = Future Day")
+
+
+def show_settings():
+    st.header("⚙️ Settings")
+    
+    st.subheader("Backend Configuration")
+    st.write(f"**Backend URL:** {API_BASE_URL}")
+    
+    st.subheader("Study Preferences")
+    study_hours = st.slider("Daily Study Hours", 1, 8, 4)
+    difficulty = st.selectbox("Preferred Difficulty", ["Easy", "Medium", "Hard"])
+    
+    if st.button("Save Settings"):
+        st.success("Settings saved!")
+
+
+def send_chat_message(message: str, topic_category: str):
+    """Send message to AI and get response"""
+    
+    try:
+        payload = {
+            "message": message,
+            "topic_category": topic_category
+        }
+        
+        response = requests.post(f"{API_BASE_URL}/chat", json=payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Add to chat history
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": message
+            })
+            
+            st.session_state.chat_history.append({
+                "role": "assistant", 
+                "content": result["response"]
+            })
+        
+        else:
+            st.error("Failed to get AI response")
+    
+    except Exception as e:
+        st.error(f"Error sending message: {str(e)}")
+
+
+def log_progress(day: int, plan: dict):
+    """Log daily progress"""
+    
+    try:
+        payload = {
+            "day": day,
+            "topics": plan["topics"],
+            "notes": f"Completed day {day} study plan",
+            "hours_studied": plan["estimated_hours"],
+            "problems_solved": len(plan["practice_problems"]),
+            "confidence_level": 8  # Default confidence
+        }
+        
+        response = requests.post(f"{API_BASE_URL}/progress/daily", json=payload)
+        
+        if response.status_code == 200:
+            st.session_state.current_day = day + 1
+        else:
+            st.error("Failed to log progress")
+    
+    except Exception as e:
+        st.error(f"Error logging progress: {str(e)}")
+
+
+if __name__ == "__main__":
+    main()
