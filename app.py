@@ -139,7 +139,7 @@ def show_daily_plan():
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                st.subheader(f"Day {plan['day']} - {', '.join(plan['topics'])}")
+                st.subheader(f"Day {selected_day} - {', '.join(plan['topics'])}")
 
                 # Topics
                 st.write("**Topics to Cover:**")
