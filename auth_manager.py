@@ -17,13 +17,24 @@ class AuthManager:
                     "username": username,
                     "full_name": full_name,
                     "password": password
-                }
+                },
+                timeout=10
             )
             
             if response.status_code == 200:
                 return {"success": True, "data": response.json()}
             else:
-                return {"success": False, "error": response.json().get("detail", "Registration failed")}
+                error_detail = "Registration failed"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", error_detail)
+                except:
+                    error_detail = response.text or error_detail
+                return {"success": False, "error": error_detail}
+        except requests.exceptions.Timeout:
+            return {"success": False, "error": "Request timeout - server not responding"}
+        except requests.exceptions.ConnectionError:
+            return {"success": False, "error": "Connection error - cannot reach server"}
         except Exception as e:
             return {"success": False, "error": f"Connection error: {str(e)}"}
     
@@ -35,14 +46,25 @@ class AuthManager:
                 json={
                     "email": email,
                     "password": password
-                }
+                },
+                timeout=10
             )
             
             if response.status_code == 200:
                 token_data = response.json()
                 return {"success": True, "data": token_data}
             else:
-                return {"success": False, "error": response.json().get("detail", "Login failed")}
+                error_detail = "Login failed"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", error_detail)
+                except:
+                    error_detail = response.text or error_detail
+                return {"success": False, "error": error_detail}
+        except requests.exceptions.Timeout:
+            return {"success": False, "error": "Request timeout - server not responding"}
+        except requests.exceptions.ConnectionError:
+            return {"success": False, "error": "Connection error - cannot reach server"}
         except Exception as e:
             return {"success": False, "error": f"Connection error: {str(e)}"}
     
