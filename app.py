@@ -78,7 +78,18 @@ def render_daily_plan():
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            st.subheader(f"Day {selected_day} - {', '.join(plan['topics'])}")
+            # Handle different topic formats
+            topics = plan.get('topics', [])
+            if topics:
+                if isinstance(topics[0], dict):
+                    # New format: list of objects
+                    topic_names = [topic.get('topic_name', str(topic)) for topic in topics]
+                else:
+                    # Old format: list of strings
+                    topic_names = topics
+                st.subheader(f"Day {selected_day} - {', '.join(topic_names)}")
+            else:
+                st.subheader(f"Day {selected_day}")
             
             # Difficulty indicator
             difficulty = plan.get('difficulty_level', 'Medium')
@@ -91,25 +102,79 @@ def render_daily_plan():
 
             # Topics
             st.write("**Topics to Cover:**")
-            for topic in plan["topics"]:
-                st.write(f"• {topic}")
+            for topic in topics:
+                if isinstance(topic, dict):
+                    topic_name = topic.get('topic_name', str(topic))
+                else:
+                    topic_name = topic
+                st.write(f"• {topic_name}")
 
             # Learning objectives
             st.write("**Learning Objectives:**")
-            for objective in plan["learning_objectives"]:
-                st.write(f"• {objective}")
+            learning_objectives = plan.get("learning_objectives", [])
+            
+            # Handle different learning objectives formats
+            if learning_objectives:
+                if isinstance(learning_objectives, dict):
+                    # Format: {"topic": ["obj1", "obj2"], ...}
+                    for topic, objectives in learning_objectives.items():
+                        st.write(f"**{topic}:**")
+                        for objective in objectives:
+                            st.write(f"• {objective}")
+                elif isinstance(learning_objectives, list) and learning_objectives:
+                    if isinstance(learning_objectives[0], dict):
+                        # Format: [{"topic": "name", "objectives": [...]}, ...]
+                        for obj in learning_objectives:
+                            if "topic" in obj and "objectives" in obj:
+                                st.write(f"**{obj['topic']}:**")
+                                for objective in obj["objectives"]:
+                                    st.write(f"• {objective}")
+                            else:
+                                # Fallback for other object formats
+                                st.write(f"• {str(obj)}")
+                    else:
+                        # Format: ["obj1", "obj2", ...]
+                        for objective in learning_objectives:
+                            st.write(f"• {objective}")
+                else:
+                    st.write("• No learning objectives available")
 
             # Practice problems with difficulty indicators
             st.write("**Practice Problems:**")
-            for problem in plan["practice_problems"]:
-                if "(Easy)" in problem:
-                    st.write(f"🟢 {problem}")
-                elif "(Medium)" in problem:
-                    st.write(f"🟡 {problem}")
-                elif "(Hard)" in problem:
-                    st.write(f"🔴 {problem}")
+            practice_problems = plan.get("practice_problems", [])
+            
+            # Handle different practice problems formats
+            if practice_problems:
+                if isinstance(practice_problems[0], dict):
+                    # New AI format: list of objects with description and difficulty_level
+                    for problem in practice_problems:
+                        if "description" in problem and "difficulty_level" in problem:
+                            difficulty = problem["difficulty_level"]
+                            description = problem["description"]
+                            if difficulty == "Easy":
+                                st.write(f"🟢 {description}")
+                            elif difficulty == "Medium":
+                                st.write(f"🟡 {description}")
+                            elif difficulty == "Hard":
+                                st.write(f"🔴 {description}")
+                            else:
+                                st.write(f"• {description}")
+                        else:
+                            # Fallback for other object formats
+                            st.write(f"• {str(problem)}")
                 else:
-                    st.write(f"• {problem}")
+                    # Old format: list of strings
+                    for problem in practice_problems:
+                        if "(Easy)" in problem:
+                            st.write(f"🟢 {problem}")
+                        elif "(Medium)" in problem:
+                            st.write(f"🟡 {problem}")
+                        elif "(Hard)" in problem:
+                            st.write(f"🔴 {problem}")
+                        else:
+                            st.write(f"• {problem}")
+            else:
+                st.write("• No practice problems available")
 
         with col2:
             st.metric("Estimated Hours", f"{plan['estimated_hours']}h")

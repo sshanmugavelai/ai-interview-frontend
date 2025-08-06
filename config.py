@@ -1,7 +1,7 @@
 import os
 
 # API Configuration
-API_BASE_URL = os.getenv("BACKEND_URL", "https://ai-interview-assistant-rjve.onrender.com")
+API_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # Page Configuration
 PAGE_CONFIG = {
