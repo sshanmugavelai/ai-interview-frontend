@@ -3,611 +3,526 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import os
-from config import PAGE_CONFIG, CUSTOM_CSS, TOPIC_CATEGORIES, STUDY_PLAN_DAYS
-from api_client import api_client
-from session_state import SessionStateManager
+from config import PAGE_CONFIG, CUSTOM_CSS, LEARNING_CATEGORIES, COLORS, DEFAULT_STUDY_HOURS, DEFAULT_TARGET_DAYS
+from auth_manager import AuthManager
+from goals_manager import GoalsManager
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
+# Initialize managers
+auth_manager = AuthManager()
+goals_manager = GoalsManager()
+
+# Page configuration
+st.set_page_config(**PAGE_CONFIG)
+
+# Apply custom CSS
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
 def render_header():
     """Render the main header"""
-    # Apply custom CSS
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎯 AI Learning Assistant</h1>
+        <p>Personalized learning plans powered by AI</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Main header
-    st.markdown(
-        '<h1 class="main-header">🧠 AI Interview Assistant</h1>',
-        unsafe_allow_html=True
-    )
-
-    # Subtitle
-    st.markdown(
-        "**Your AI-powered companion for FAANG interview preparation**",
-        help="45-day structured study plan with daily guidance"
-    )
+def render_auth_forms():
+    """Render authentication forms"""
+    tab1, tab2 = st.tabs(["Login", "Register"])
+    
+    with tab1:
+        st.markdown("### Login to Your Account")
+        with st.form("login_form"):
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            submit_login = st.form_submit_button("Login")
+            
+            if submit_login:
+                if email and password:
+                    result = auth_manager.login_user(email, password)
+                    if result["success"]:
+                        st.session_state.token = result["data"]["access_token"]
+                        st.success("Login successful!")
+                        st.rerun()
+                    else:
+                        st.error(result["error"])
+                else:
+                    st.error("Please fill in all fields")
+    
+    with tab2:
+        st.markdown("### Create New Account")
+        with st.form("register_form"):
+            full_name = st.text_input("Full Name", key="register_name")
+            username = st.text_input("Username", key="register_username")
+            email = st.text_input("Email", key="register_email")
+            password = st.text_input("Password", type="password", key="register_password")
+            confirm_password = st.text_input("Confirm Password", type="password", key="register_confirm")
+            submit_register = st.form_submit_button("Register")
+            
+            if submit_register:
+                if all([full_name, username, email, password, confirm_password]):
+                    if password == confirm_password:
+                        result = auth_manager.register_user(email, username, full_name, password)
+                        if result["success"]:
+                            st.success("Registration successful! Please login.")
+                        else:
+                            st.error(result["error"])
+                    else:
+                        st.error("Passwords do not match")
+                else:
+                    st.error("Please fill in all fields")
 
 def render_sidebar():
-    """Render the sidebar with quick stats"""
-    with st.sidebar:
-        st.header("📊 Quick Stats")
-
-        # Get status from API
-        status = api_client.get_progress_status()
-
-        if status:
-            # Overall metrics
-            st.metric("Overall Progress", f"{status['overall_progress']:.1f}%")
-            st.metric("Days Remaining", status["days_remaining"])
-            st.metric("Readiness Score", f"{status['readiness_score']:.1f}%")
-
-            # Category progress
-            st.subheader("Category Progress")
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.metric("DSA", f"{status['dsa_progress']:.1f}%")
-                st.metric("ML", f"{status['ml_progress']:.1f}%")
-
-            with col2:
-                st.metric("System Design", f"{status['system_design_progress']:.1f}%")
-                st.metric("Behavioral", f"{status['behavioral_progress']:.1f}%")
-        else:
-            st.warning("Unable to fetch status")
-
-def render_daily_plan():
-    """Render the daily plan page with AI-generated content"""
-    st.header("🎯 Today's Study Plan")
-
-    # Day selector
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        current_day = SessionStateManager.get_current_day()
-        selected_day = st.selectbox(
-            "Select Day",
-            range(1, STUDY_PLAN_DAYS + 1),
-            index=current_day - 1
+    """Render the sidebar with navigation"""
+    st.sidebar.title("🎯 Navigation")
+    
+    if auth_manager.is_authenticated():
+        user = st.session_state.get("user", {})
+        st.sidebar.markdown(f"**Welcome, {user.get('full_name', 'User')}!**")
+        
+        page = st.sidebar.selectbox(
+            "Choose a page:",
+            ["Dashboard", "My Goals", "Create Goal", "Daily Plans", "Progress Tracking", "AI Chat", "Analytics", "Settings"]
         )
+        
+        if st.sidebar.button("Logout"):
+            auth_manager.logout()
+        
+        return page
+    else:
+        st.sidebar.markdown("Please login to access your learning dashboard.")
+        return None
 
-    # Get daily plan from API
-    plan = api_client.get_daily_plan(selected_day)
-
-    if plan:
-        # Display plan with enhanced UI
-        col1, col2 = st.columns([2, 1])
-
+def render_dashboard():
+    """Render the main dashboard"""
+    st.header("📊 Your Learning Dashboard")
+    
+    # Get user analytics
+    analytics_result = goals_manager.get_analytics()
+    
+    if analytics_result["success"]:
+        analytics = analytics_result["data"]
+        
+        # Display key metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
         with col1:
-            # Handle different topic formats
-            topics = plan.get('topics', [])
-            if topics:
-                if isinstance(topics[0], dict):
-                    # New format: list of objects
-                    topic_names = [topic.get('topic_name', str(topic)) for topic in topics]
+            st.metric("Total Goals", analytics["total_goals"])
+        
+        with col2:
+            st.metric("Active Goals", analytics["active_goals"])
+        
+        with col3:
+            st.metric("Study Hours", f"{analytics['total_study_hours']:.1f}")
+        
+        with col4:
+            st.metric("Avg Confidence", f"{analytics['average_confidence']:.1f}%")
+        
+        # Display insights
+        st.subheader("💡 AI Insights")
+        for insight in analytics["insights"]:
+            st.info(insight)
+        
+        # Display recent goals
+        goals_result = goals_manager.get_user_goals()
+        if goals_result["success"]:
+            goals = goals_result["data"]
+            if goals:
+                st.subheader("🎯 Your Goals")
+                for goal in goals[:3]:  # Show first 3 goals
+                    with st.expander(f"{goal['title']} - {goal['category']}"):
+                        st.write(f"**Description:** {goal['description']}")
+                        st.write(f"**Progress:** Day {goal['current_day']} of {goal['target_days']}")
+                        progress = (goal['current_day'] / goal['target_days']) * 100
+                        st.progress(progress / 100)
+    else:
+        st.warning("Unable to load analytics. Please try again.")
+
+def render_goals():
+    """Render goals management page"""
+    st.header("🎯 My Learning Goals")
+    
+    goals_result = goals_manager.get_user_goals()
+    
+    if goals_result["success"]:
+        goals = goals_result["data"]
+        
+        if goals:
+            for goal in goals:
+                with st.container():
+                    st.markdown(f"""
+                    <div class="goal-card">
+                        <h3>{goal['title']}</h3>
+                        <p><strong>Category:</strong> {goal['category']}</p>
+                        <p><strong>Description:</strong> {goal['description']}</p>
+                        <p><strong>Progress:</strong> Day {goal['current_day']} of {goal['target_days']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button(f"View Plan", key=f"plan_{goal['id']}"):
+                            st.session_state.selected_goal = goal['id']
+                            st.session_state.current_page = "Daily Plans"
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button(f"Track Progress", key=f"progress_{goal['id']}"):
+                            st.session_state.selected_goal = goal['id']
+                            st.session_state.current_page = "Progress Tracking"
+                            st.rerun()
+                    
+                    with col3:
+                        if st.button(f"Chat with AI", key=f"chat_{goal['id']}"):
+                            st.session_state.selected_goal = goal['id']
+                            st.session_state.current_page = "AI Chat"
+                            st.rerun()
+        else:
+            st.info("You haven't created any goals yet. Create your first learning goal!")
+    else:
+        st.error("Unable to load goals. Please try again.")
+
+def render_create_goal():
+    """Render goal creation page"""
+    st.header("🎯 Create New Learning Goal")
+    
+    with st.form("create_goal_form"):
+        title = st.text_input("Goal Title", placeholder="e.g., Master Python Programming")
+        description = st.text_area("Description", placeholder="Describe what you want to achieve...")
+        
+        category = st.selectbox(
+            "Learning Category",
+            options=list(LEARNING_CATEGORIES.keys()),
+            format_func=lambda x: LEARNING_CATEGORIES[x]["name"]
+        )
+        
+        target_days = st.slider("Target Days", min_value=7, max_value=90, value=DEFAULT_TARGET_DAYS)
+        
+        submit = st.form_submit_button("Create Goal")
+        
+        if submit:
+            if title and description:
+                result = goals_manager.create_goal(title, description, category, target_days)
+                if result["success"]:
+                    st.success("Goal created successfully!")
+                    st.rerun()
                 else:
-                    # Old format: list of strings
-                    topic_names = topics
-                st.subheader(f"Day {selected_day} - {', '.join(topic_names)}")
+                    st.error(result["error"])
             else:
-                st.subheader(f"Day {selected_day}")
-            
-            # Difficulty indicator
-            difficulty = plan.get('difficulty_level', 'Medium')
-            difficulty_color = {
-                'Easy': '🟢',
-                'Medium': '🟡', 
-                'Hard': '🔴'
-            }.get(difficulty, '🟡')
-            st.write(f"**Difficulty:** {difficulty_color} {difficulty}")
+                st.error("Please fill in all required fields")
 
-            # Topics
-            st.write("**Topics to Cover:**")
-            for topic in topics:
-                if isinstance(topic, dict):
-                    topic_name = topic.get('topic_name', str(topic))
-                else:
-                    topic_name = topic
-                st.write(f"• {topic_name}")
-
-            # Learning objectives
-            st.write("**Learning Objectives:**")
-            learning_objectives = plan.get("learning_objectives", [])
+def render_daily_plans():
+    """Render daily plans page"""
+    st.header("📅 Daily Learning Plans")
+    
+    goals_result = goals_manager.get_user_goals()
+    
+    if goals_result["success"]:
+        goals = goals_result["data"]
+        
+        if goals:
+            # Goal selection
+            selected_goal_id = st.selectbox(
+                "Select a goal:",
+                options=[goal["id"] for goal in goals],
+                format_func=lambda x: next(goal["title"] for goal in goals if goal["id"] == x)
+            )
             
-            # Handle different learning objectives formats
-            if learning_objectives:
-                if isinstance(learning_objectives, dict):
-                    # Format: {"topic": ["obj1", "obj2"], ...}
-                    for topic, objectives in learning_objectives.items():
-                        st.write(f"**{topic}:**")
-                        for objective in objectives:
-                            st.write(f"• {objective}")
-                elif isinstance(learning_objectives, list) and learning_objectives:
-                    if isinstance(learning_objectives[0], dict):
-                        # Format: [{"topic": "name", "objectives": [...]}, ...]
-                        for obj in learning_objectives:
-                            if "topic" in obj and "objectives" in obj:
-                                st.write(f"**{obj['topic']}:**")
-                                for objective in obj["objectives"]:
-                                    st.write(f"• {objective}")
-                            else:
-                                # Fallback for other object formats
-                                st.write(f"• {str(obj)}")
-                    else:
-                        # Format: ["obj1", "obj2", ...]
-                        for objective in learning_objectives:
-                            st.write(f"• {objective}")
-                else:
-                    st.write("• No learning objectives available")
-
-            # Practice problems with difficulty indicators
-            st.write("**Practice Problems:**")
-            practice_problems = plan.get("practice_problems", [])
+            # Day selection
+            selected_day = st.slider("Select Day", min_value=1, max_value=30, value=1)
             
-            # Handle different practice problems formats
-            if practice_problems:
-                if isinstance(practice_problems[0], dict):
-                    # New AI format: list of objects with description and difficulty_level
-                    for problem in practice_problems:
-                        if "description" in problem and "difficulty_level" in problem:
-                            difficulty = problem["difficulty_level"]
-                            description = problem["description"]
+            if st.button("Generate Plan"):
+                with st.spinner("Generating your personalized plan..."):
+                    plan_result = goals_manager.get_daily_plan(selected_goal_id, selected_day)
+                    
+                    if plan_result["success"]:
+                        plan = plan_result["data"]
+                        
+                        st.subheader(f"📋 Day {selected_day} Plan")
+                        
+                        # Topics
+                        st.write("**Topics to Cover:**")
+                        for topic in plan["topics"]:
+                            st.write(f"• {topic}")
+                        
+                        # Learning Objectives
+                        st.write("**Learning Objectives:**")
+                        for topic, objectives in plan["learning_objectives"].items():
+                            st.write(f"**{topic}:**")
+                            for objective in objectives:
+                                st.write(f"  • {objective}")
+                        
+                        # Practice Problems
+                        st.write("**Practice Activities:**")
+                        for problem in plan["practice_problems"]:
+                            difficulty = problem.get("difficulty_level", "Medium")
+                            description = problem.get("description", "Practice activity")
+                            
                             if difficulty == "Easy":
                                 st.write(f"🟢 {description}")
                             elif difficulty == "Medium":
                                 st.write(f"🟡 {description}")
-                            elif difficulty == "Hard":
-                                st.write(f"🔴 {description}")
                             else:
-                                st.write(f"• {description}")
-                        else:
-                            # Fallback for other object formats
-                            st.write(f"• {str(problem)}")
-                else:
-                    # Old format: list of strings
-                    for problem in practice_problems:
-                        if "(Easy)" in problem:
-                            st.write(f"🟢 {problem}")
-                        elif "(Medium)" in problem:
-                            st.write(f"🟡 {problem}")
-                        elif "(Hard)" in problem:
-                            st.write(f"🔴 {problem}")
-                        else:
-                            st.write(f"• {problem}")
-            else:
-                st.write("• No practice problems available")
-
-        with col2:
-            st.metric("Estimated Hours", f"{plan['estimated_hours']}h")
-
-            # Focus areas
-            if 'focus_areas' in plan:
-                st.write("**Focus Areas:**")
-                for area in plan['focus_areas']:
-                    st.write(f"🎯 {area}")
-
-            # Resources
-            st.write("**Resources:**")
-            for resource in plan["resources"]:
-                st.write(f"📚 {resource}")
-
-            # Log progress button
-            if st.button("✅ Mark Day Complete", type="primary"):
-                result = api_client.log_progress(selected_day, plan)
-                if result:
-                    SessionStateManager.increment_current_day()
-                    st.success(f"Day {selected_day} marked as complete!")
-                    st.balloons()
-                else:
-                    st.error("Failed to log progress")
+                                st.write(f"🔴 {description}")
+                        
+                        # Resources
+                        st.write("**Recommended Resources:**")
+                        for resource in plan["resources"]:
+                            st.write(f"• {resource}")
+                        
+                        # Summary
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Estimated Hours", f"{plan['estimated_hours']:.1f}")
+                        with col2:
+                            st.metric("Difficulty", plan["difficulty_level"])
+                        with col3:
+                            st.metric("Focus Areas", len(plan["focus_areas"]))
+                    else:
+                        st.error(plan_result["error"])
+        else:
+            st.info("Create a goal first to generate daily plans!")
     else:
-        st.error("Unable to fetch daily plan")
+        st.error("Unable to load goals. Please try again.")
+
+def render_progress_tracking():
+    """Render progress tracking page"""
+    st.header("📊 Progress Tracking")
+    
+    goals_result = goals_manager.get_user_goals()
+    
+    if goals_result["success"]:
+        goals = goals_result["data"]
+        
+        if goals:
+            # Goal selection
+            selected_goal_id = st.selectbox(
+                "Select a goal to track:",
+                options=[goal["id"] for goal in goals],
+                format_func=lambda x: next(goal["title"] for goal in goals if goal["id"] == x)
+            )
+            
+            # Progress logging form
+            with st.form("progress_form"):
+                st.subheader("Log Today's Progress")
+                
+                day = st.number_input("Day", min_value=1, value=1)
+                topics_covered = st.multiselect(
+                    "Topics Covered",
+                    options=["Topic 1", "Topic 2", "Topic 3", "Topic 4"],
+                    default=[]
+                )
+                hours_studied = st.slider("Hours Studied", min_value=0.5, max_value=8.0, value=2.0, step=0.5)
+                problems_solved = st.number_input("Problems/Activities Completed", min_value=0, value=0)
+                confidence_level = st.slider("Confidence Level", min_value=0, max_value=100, value=50)
+                notes = st.text_area("Notes (optional)")
+                
+                submit_progress = st.form_submit_button("Log Progress")
+                
+                if submit_progress:
+                    if topics_covered:
+                        result = goals_manager.log_progress(
+                            selected_goal_id, day, topics_covered, 
+                            hours_studied, problems_solved, confidence_level, notes
+                        )
+                        
+                        if result["success"]:
+                            st.success("Progress logged successfully!")
+                            st.info(f"AI Feedback: {result['data']['ai_feedback']}")
+                        else:
+                            st.error(result["error"])
+                    else:
+                        st.error("Please select at least one topic covered")
+            
+            # Show progress history
+            st.subheader("Progress History")
+            progress_result = goals_manager.get_goal_progress(selected_goal_id)
+            
+            if progress_result["success"]:
+                progress_logs = progress_result["data"]
+                
+                if progress_logs:
+                    # Create progress chart
+                    days = [log["day"] for log in progress_logs]
+                    hours = [log["hours_studied"] for log in progress_logs]
+                    confidence = [log["confidence_level"] for log in progress_logs]
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=days, y=hours, name="Study Hours", mode="lines+markers"))
+                    fig.add_trace(go.Scatter(x=days, y=confidence, name="Confidence Level", mode="lines+markers", yaxis="y2"))
+                    
+                    fig.update_layout(
+                        title="Progress Over Time",
+                        xaxis_title="Day",
+                        yaxis_title="Study Hours",
+                        yaxis2=dict(title="Confidence Level", overlaying="y", side="right"),
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No progress logged yet. Start tracking your progress!")
+        else:
+            st.info("Create a goal first to track progress!")
+    else:
+        st.error("Unable to load goals. Please try again.")
 
 def render_ai_chat():
-    """Render the AI chat page with enhanced features"""
-    st.header("💬 AI Interview Coach")
-
-    # Topic selection with descriptions
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        topic_descriptions = {
-            "general": "General interview preparation",
-            "dsa": "Data Structures & Algorithms",
-            "ml": "Machine Learning & AI",
-            "system_design": "System Design",
-            "behavioral": "Behavioral Questions"
-        }
+    """Render AI chat page"""
+    st.header("🤖 AI Learning Coach")
+    
+    goals_result = goals_manager.get_user_goals()
+    
+    if goals_result["success"]:
+        goals = goals_result["data"]
         
-        topic_category = st.selectbox(
-            "Select Topic Category",
-            TOPIC_CATEGORIES,
-            help="Choose a specific topic for more targeted assistance",
-            format_func=lambda x: f"{x.upper()} - {topic_descriptions.get(x, '')}"
-        )
-
-    # Chat interface with enhanced features
-    chat_container = st.container()
-
-    with chat_container:
-        # Display chat history with better formatting
-        chat_history = SessionStateManager.get_chat_history()
-        
-        if chat_history:
-            st.subheader("💬 Chat History")
-            for i, message in enumerate(chat_history):
-                if message["role"] == "user":
-                    st.markdown(f"**You:** {message['content']}")
+        if goals:
+            # Goal selection
+            selected_goal_id = st.selectbox(
+                "Select a goal for context:",
+                options=[goal["id"] for goal in goals],
+                format_func=lambda x: next(goal["title"] for goal in goals if goal["id"] == x)
+            )
+            
+            # Chat interface
+            st.markdown("""
+            <div class="chat-container">
+                <p>Ask your AI learning coach anything about your studies!</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Chat input
+            user_message = st.text_input("Your question:", key="chat_input")
+            
+            if st.button("Send Message"):
+                if user_message:
+                    with st.spinner("Getting AI response..."):
+                        result = goals_manager.chat_with_ai(selected_goal_id, user_message)
+                        
+                        if result["success"]:
+                            response = result["data"]
+                            
+                            st.markdown("### AI Response:")
+                            st.write(response["response"])
+                            
+                            st.markdown("### Confidence Level:")
+                            st.progress(response["confidence"] / 100)
+                            
+                            st.markdown("### Suggestions:")
+                            for suggestion in response["suggestions"]:
+                                st.write(f"• {suggestion}")
+                        else:
+                            st.error(result["error"])
                 else:
-                    st.markdown(f"**AI Coach:** {message['content']}")
-                st.divider()
-
-        # Chat input with suggestions
-        st.subheader("Ask Your Question")
-        
-        # Quick suggestions based on topic
-        suggestions = {
-            "dsa": [
-                "How do I approach dynamic programming problems?",
-                "What's the best way to practice binary search?",
-                "How do I analyze time complexity?"
-            ],
-            "ml": [
-                "How do I choose between different ML algorithms?",
-                "What's the bias-variance tradeoff?",
-                "How do I handle overfitting?"
-            ],
-            "system_design": [
-                "How do I design a scalable system?",
-                "What's the CAP theorem?",
-                "How do I choose between SQL and NoSQL?"
-            ],
-            "behavioral": [
-                "How do I answer 'Tell me about yourself'?",
-                "How do I handle conflict resolution questions?",
-                "How do I prepare STAR method answers?"
-            ],
-            "general": [
-                "How do I prepare for technical interviews?",
-                "What should I focus on for FAANG interviews?",
-                "How do I manage interview anxiety?"
-            ]
-        }
-        
-        topic_suggestions = suggestions.get(topic_category, [])
-        if topic_suggestions:
-            st.write("💡 **Quick Suggestions:**")
-            for suggestion in topic_suggestions:
-                if st.button(suggestion, key=f"suggestion_{suggestion[:20]}"):
-                    user_input = suggestion
-                    break
-            else:
-                user_input = st.text_area("Ask your question:", height=100)
+                    st.error("Please enter a message")
         else:
-            user_input = st.text_area("Ask your question:", height=100)
-
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("Send", type="primary"):
-                if user_input.strip():
-                    send_chat_message(user_input, topic_category)
-                    st.rerun()
-        with col2:
-            if st.button("Clear Chat"):
-                SessionStateManager.clear_chat_history()
-                st.rerun()
-
-def send_chat_message(message: str, topic_category: str):
-    """Send message to AI and get response"""
-    # Add user message to history
-    SessionStateManager.add_chat_message("user", message)
-
-    # Show loading spinner
-    with st.spinner("AI Coach is thinking..."):
-        # Get AI response
-        result = api_client.send_chat_message(message, topic_category)
-
-        if result:
-            # Add AI response to history
-            SessionStateManager.add_chat_message("assistant", result["response"])
-        else:
-            st.error("Failed to get AI response")
+            st.info("Create a goal first to chat with the AI coach!")
+    else:
+        st.error("Unable to load goals. Please try again.")
 
 def render_analytics():
-    """Render the analytics page with enhanced visualizations"""
-    st.header("📈 Progress Analytics")
-
-    # Get analytics from API
-    analytics = api_client.get_analytics()
-
-    if analytics:
-        # Enhanced metrics display
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric(
-                "Total Hours Studied", f"{analytics['total_study_hours']:.1f}h"
-            )
-        with col2:
-            st.metric("Problems Solved", analytics["problems_solved"])
-        with col3:
-            st.metric("Topics Completed", analytics["topics_completed"])
-        with col4:
-            st.metric("Confidence Level", f"{analytics['confidence_level']}%")
-
-        # Progress chart with enhanced styling
-        st.subheader("📊 Study Progress by Category")
-
-        # Create a more detailed progress chart
-        progress_data = {
-            "Category": ["DSA", "ML", "System Design", "Behavioral"],
-            "Progress": [75, 60, 45, 80],
-            "Target": [100, 100, 100, 100]
-        }
-
-        fig = go.Figure()
-
-        # Add progress bars
-        fig.add_trace(go.Bar(
-            name='Current Progress',
-            x=progress_data["Category"],
-            y=progress_data["Progress"],
-            marker_color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-        ))
-
-        fig.add_trace(go.Bar(
-            name='Target',
-            x=progress_data["Category"],
-            y=progress_data["Target"],
-            marker_color='rgba(0,0,0,0.1)',
-            showlegend=False
-        ))
-
-        fig.update_layout(
-            title="Progress by Category",
-            barmode='overlay',
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Additional metrics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Days Remaining", analytics["days_remaining"])
-        with col2:
-            st.metric("Streak Days", analytics["streak_days"])
-
-        # Study streak visualization
-        st.subheader("🔥 Study Streak")
-        streak_days = analytics["streak_days"]
-        if streak_days > 0:
-            st.write(f"You're on a {streak_days}-day study streak! Keep it up! 🔥")
-            
-            # Create streak visualization
-            streak_fig = go.Figure()
-            streak_fig.add_trace(go.Indicator(
-                mode="gauge+number",
-                value=streak_days,
-                title={'text': "Current Streak"},
-                gauge={'axis': {'range': [None, 30]},
-                       'bar': {'color': "darkblue"},
-                       'steps': [
-                           {'range': [0, 7], 'color': "lightgray"},
-                           {'range': [7, 14], 'color': "yellow"},
-                           {'range': [14, 21], 'color': "orange"},
-                           {'range': [21, 30], 'color': "red"}
-                       ],
-                       'threshold': {
-                           'line': {'color': "red", 'width': 4},
-                           'thickness': 0.75,
-                           'value': 21
-                       }}))
-            st.plotly_chart(streak_fig, use_container_width=True)
-        else:
-            st.write("Start your study streak today! 📚")
-
-        # Completion rate
-        completion_rate = analytics.get("completion_rate", 0)
-        st.subheader("📋 Overall Completion")
-        st.progress(completion_rate / 100)
-        st.write(f"**{completion_rate:.1f}%** of the 45-day plan completed")
-
-    else:
-        st.warning("No progress data available yet. Start studying to see analytics!")
-
-def render_calendar():
-    """Render the calendar page with enhanced features"""
-    st.header("📅 Study Calendar")
-
-    st.write("**45-Day Study Plan Overview**")
-
-    # Create an enhanced calendar view
-    st.subheader("📅 45-Day Study Plan")
-
-    # Create a calendar grid with better styling
-    days = list(range(1, STUDY_PLAN_DAYS + 1))
-    cols = st.columns(7)
-
-    current_day = SessionStateManager.get_current_day()
-
-    for i, day in enumerate(days):
-        col_idx = i % 7
-        with cols[col_idx]:
-            if day == current_day:
-                st.markdown(f"**{day}** 🎯")
-            elif day < current_day:
-                st.markdown(f"~~{day}~~ ✅")
-            else:
-                st.markdown(f"{day}")
-
-    st.write("**Legend:**")
-    st.write("• 🎯 = Current Day")
-    st.write("• ✅ = Completed")
-    st.write("• Number = Future Day")
-
-    # Progress summary with enhanced metrics
-    st.subheader("📊 Progress Summary")
-
-    completed_days = current_day - 1
-    remaining_days = STUDY_PLAN_DAYS - current_day + 1
-    progress_percentage = (completed_days / STUDY_PLAN_DAYS) * 100
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Completed Days", completed_days)
-    with col2:
-        st.metric("Remaining Days", remaining_days)
-    with col3:
-        st.metric("Overall Progress", f"{progress_percentage:.1f}%")
-
-    # Enhanced progress bar
-    st.progress(progress_percentage / 100)
-
-    # Study timeline visualization
-    st.subheader("📈 Study Timeline")
+    """Render analytics page"""
+    st.header("📈 Learning Analytics")
     
-    # Create a timeline chart
-    timeline_data = {
-        "Week": [f"Week {i+1}" for i in range(7)],
-        "Days": [7, 7, 7, 7, 7, 7, 3],
-        "Completed": [min(completed_days, 7), max(0, min(completed_days-7, 7)), 
-                     max(0, min(completed_days-14, 7)), max(0, min(completed_days-21, 7)),
-                     max(0, min(completed_days-28, 7)), max(0, min(completed_days-35, 7)),
-                     max(0, min(completed_days-42, 3))]
-    }
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name='Completed Days',
-        x=timeline_data["Week"],
-        y=timeline_data["Completed"],
-        marker_color='#1f77b4'
-    ))
-    fig.add_trace(go.Bar(
-        name='Remaining Days',
-        x=timeline_data["Week"],
-        y=[max(0, total - completed) for total, completed in zip(timeline_data["Days"], timeline_data["Completed"])],
-        marker_color='lightgray'
-    ))
-
-    fig.update_layout(
-        title="Weekly Progress",
-        barmode='stack',
-        height=400
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    analytics_result = goals_manager.get_analytics()
+    
+    if analytics_result["success"]:
+        analytics = analytics_result["data"]
+        
+        # Key metrics
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Total Goals", analytics["total_goals"])
+            st.metric("Active Goals", analytics["active_goals"])
+            st.metric("Total Study Hours", f"{analytics['total_study_hours']:.1f}")
+        
+        with col2:
+            st.metric("Average Confidence", f"{analytics['average_confidence']:.1f}%")
+            st.metric("Streak Days", analytics["streak_days"])
+            st.metric("Completion Rate", f"{analytics['completion_rate']:.1f}%")
+        
+        # Insights
+        st.subheader("💡 AI-Generated Insights")
+        for insight in analytics["insights"]:
+            st.info(insight)
+        
+        # Goals progress chart
+        goals_result = goals_manager.get_user_goals()
+        if goals_result["success"]:
+            goals = goals_result["data"]
+            
+            if goals:
+                goal_names = [goal["title"] for goal in goals]
+                progress_values = [(goal["current_day"] / goal["target_days"]) * 100 for goal in goals]
+                
+                fig = px.bar(
+                    x=goal_names,
+                    y=progress_values,
+                    title="Goal Progress",
+                    labels={"x": "Goals", "y": "Progress (%)"}
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.error("Unable to load analytics. Please try again.")
 
 def render_settings():
-    """Render the settings page with enhanced features"""
+    """Render settings page"""
     st.header("⚙️ Settings")
-
-    # Backend configuration
-    st.subheader("🔧 Backend Configuration")
-    from config import API_BASE_URL
-    st.write(f"**Backend URL:** {API_BASE_URL}")
-
-    # Test connection
-    if st.button("🔗 Test Connection"):
-        health = api_client.get_health()
-        if health:
-            st.success("✅ Backend connection successful!")
-        else:
-            st.error("❌ Backend connection failed!")
-
-    # Study preferences
-    st.subheader("📚 Study Preferences")
-
-    preferences = SessionStateManager.get_user_preferences()
-
-    study_hours = st.slider(
-        "Daily Study Hours",
-        1, 8,
-        preferences.get("study_hours", 4)
-    )
-
-    difficulty = st.selectbox(
-        "Preferred Difficulty",
-        ["Easy", "Medium", "Hard"],
-        index=["Easy", "Medium", "Hard"].index(preferences.get("difficulty", "Medium"))
-    )
-
-    notifications = st.checkbox(
-        "Enable Notifications",
-        value=preferences.get("notifications", True)
-    )
-
-    # AI preferences
-    st.subheader("🤖 AI Preferences")
     
-    ai_style = st.selectbox(
-        "AI Coach Style",
-        ["Encouraging", "Direct", "Detailed", "Concise"],
-        index=["Encouraging", "Direct", "Detailed", "Concise"].index(preferences.get("ai_style", "Encouraging"))
-    )
-
-    # Save settings
-    if st.button("💾 Save Settings"):
-        new_preferences = {
-            "study_hours": study_hours,
-            "difficulty": difficulty,
-            "notifications": notifications,
-            "ai_style": ai_style
-        }
-        SessionStateManager.update_user_preferences(new_preferences)
-        st.success("Settings saved successfully!")
-
-    # Display current settings
-    st.subheader("📋 Current Settings")
-    st.json(preferences)
-
-    # Reset options
-    st.subheader("🔄 Reset Options")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🗑️ Clear Chat History"):
-            SessionStateManager.clear_chat_history()
-            st.success("Chat history cleared!")
-
-    with col2:
-        if st.button("🔄 Reset Progress"):
-            SessionStateManager.set_current_day(1)
-            st.success("Progress reset to day 1!")
+    st.subheader("Account Information")
+    user = st.session_state.get("user", {})
+    
+    if user:
+        st.write(f"**Name:** {user.get('full_name', 'N/A')}")
+        st.write(f"**Email:** {user.get('email', 'N/A')}")
+        st.write(f"**Username:** {user.get('username', 'N/A')}")
+    
+    st.subheader("Preferences")
+    st.write("Settings and preferences will be available here.")
 
 def main():
-    """Main application entry point"""
-    # Configure page
-    st.set_page_config(**PAGE_CONFIG)
-
-    # Initialize session state
-    SessionStateManager.initialize()
-
-    # Render header
+    """Main application function"""
     render_header()
-
-    # Render sidebar
-    render_sidebar()
-
-    # Main tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🎯 Daily Plan",
-        "💬 AI Chat",
-        "📈 Progress Analytics",
-        "📅 Study Calendar",
-        "⚙️ Settings"
-    ])
-
-    # Render tab content
-    with tab1:
-        render_daily_plan()
-
-    with tab2:
+    
+    # Check authentication
+    if not auth_manager.is_authenticated():
+        # Get user info if token exists
+        token = auth_manager.get_token()
+        if token:
+            user_result = auth_manager.get_current_user(token)
+            if user_result["success"]:
+                st.session_state.user = user_result["data"]
+            else:
+                auth_manager.logout()
+        
+        # Show auth forms
+        render_auth_forms()
+        return
+    
+    # User is authenticated, show main app
+    page = render_sidebar()
+    
+    if page == "Dashboard":
+        render_dashboard()
+    elif page == "My Goals":
+        render_goals()
+    elif page == "Create Goal":
+        render_create_goal()
+    elif page == "Daily Plans":
+        render_daily_plans()
+    elif page == "Progress Tracking":
+        render_progress_tracking()
+    elif page == "AI Chat":
         render_ai_chat()
-
-    with tab3:
+    elif page == "Analytics":
         render_analytics()
-
-    with tab4:
-        render_calendar()
-
-    with tab5:
+    elif page == "Settings":
         render_settings()
 
 if __name__ == "__main__":
